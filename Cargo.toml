@@ -1,0 +1,21 @@
+[package]
+name = "item-cleaner"
+authors = ["Connor Haigh"]
+description = "item-cleaner is a command-line application for cleaning directories of various temporary files."
+version = "0.1.0"
+edition = "2021"
+
+license = "MIT"
+repository = "https://github.com/connorhaigh/item-cleaner"
+readme = "readme.md"
+keywords = ["utility"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+clap = { version = "4.1.4", features = ["derive"] }
+directories = "4.0.1"
+glob = "0.3.0"
+home = "0.5.3"
+question = "0.2.2"
+serde = { version = "1.0.140", features = ["derive"] }
+serde_json = "1.0.82"
