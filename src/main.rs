@@ -12,6 +12,7 @@ use profile::{Entry, Profile, ProfileError};
 
 mod profile;
 
+/// Performs cleaning on directories using profiles.
 #[derive(Debug, Parser)]
 #[command(author, version, about, long_about)]
 struct Args {
@@ -24,6 +25,7 @@ struct Args {
 	mode: Mode,
 }
 
+/// Determines the mode of operation.
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum Mode {
 	/// Indicates that no prompts should be generated.
@@ -39,20 +41,29 @@ enum Mode {
 fn main() {
 	let args = Args::parse();
 
-	match clean(&args.profile, args.mode.into()) {
+	match clean(args.profile, args.mode) {
 		Ok(()) => println!("Successfully cleaned items."),
 		Err(e) => println!("Failed to clean items: {}.", e),
 	}
 }
 
+/// Represents a clean-related error.
 #[derive(Debug)]
 enum CleanError {
+	/// Indicates that the profile could not be loaded.
 	FailedToLoad(ProfileError),
+
+	/// Indicates that the metadata for a particular entry could not be read.
 	FailedToInspectEntry(io::Error),
+
+	/// Indicates that a particular file could not be removed.
 	FailedToRemoveFile(io::Error),
+
+	/// Indicates that a particular directory could not be removed.
 	FailedToRemoveDirectory(io::Error),
 }
 
+/// Indicates the result of a clean operation.
 type CleanResult = Result<(), CleanError>;
 
 impl Display for CleanError {
@@ -68,15 +79,18 @@ impl Display for CleanError {
 
 impl Error for CleanError {}
 
-fn clean<T>(profile_path: T, mode: Mode) -> CleanResult
+/// Cleans the entries described by the specified profile in the specified mode.
+fn clean<T>(profile: T, mode: Mode) -> CleanResult
 where
 	T: AsRef<Path>,
 {
-	println!("Loading profile from path <{}>...", profile_path.as_ref().display());
+	println!("Loading profile from path <{}>...", profile.as_ref().display());
 
-	let profile = Profile::load(profile_path).map_err(CleanError::FailedToLoad)?;
+	let profile = Profile::load(profile).map_err(CleanError::FailedToLoad)?;
 
 	println!("Discovering paths using profile '{}'...", profile.name);
+
+	// Collect all applicable entries.
 
 	#[rustfmt::skip]
 	let entries: Vec<&Entry> = if matches!(mode, Mode::EveryEntry) {
@@ -88,6 +102,8 @@ where
 	};
 
 	let start = Instant::now();
+
+	// Expand each entry to all of its paths.
 
 	#[rustfmt::skip]
 	let paths: Vec<PathBuf> = entries.iter()
@@ -116,17 +132,19 @@ where
 	Ok(())
 }
 
+/// Attempts to remove the specified path.
 fn remove<T>(path: T) -> CleanResult
 where
 	T: AsRef<Path>,
 {
 	match path.as_ref().metadata().map_err(CleanError::FailedToInspectEntry)? {
-		m if m.is_file() => fs::remove_file(&path).map_err(CleanError::FailedToRemoveFile),
-		m if m.is_dir() => fs::remove_dir_all(&path).map_err(CleanError::FailedToRemoveDirectory),
+		m if m.is_file() => fs::remove_file(path).map_err(CleanError::FailedToRemoveFile),
+		m if m.is_dir() => fs::remove_dir_all(path).map_err(CleanError::FailedToRemoveDirectory),
 		_ => Ok(()),
 	}
 }
 
+/// Continually prompts for a yes or no answer.
 fn prompt<T>(str: T) -> bool
 where
 	T: AsRef<str>,
