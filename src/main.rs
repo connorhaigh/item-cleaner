@@ -8,6 +8,7 @@ use std::{
 };
 
 use clap::{Parser, ValueEnum};
+use humansize::{FormatSize, DECIMAL};
 use profile::{Entry, Profile, ProfileError};
 
 mod profile;
@@ -53,7 +54,14 @@ enum CleanError {
 	/// Indicates that the profile could not be loaded.
 	FailedToLoad(ProfileError),
 
-	/// Indicates that the metadata for a particular entry could not be read.
+	/// Indicates that the entry could not be removed.
+	FailedToRemove(RemoveError),
+}
+
+/// Represents a remove-related error.
+#[derive(Debug)]
+enum RemoveError {
+	/// Indicates that the metadata for a particular file could not be read.
 	FailedToInspectEntry(io::Error),
 
 	/// Indicates that a particular file could not be removed.
@@ -66,10 +74,21 @@ enum CleanError {
 /// Indicates the result of a clean operation.
 type CleanResult = Result<(), CleanError>;
 
+/// Indicates the result of a remove operation.
+type RemoveResult = Result<u64, RemoveError>;
+
 impl Display for CleanError {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match self {
 			Self::FailedToLoad(e) => write!(f, "failed to load profile [{}]", e),
+			Self::FailedToRemove(e) => write!(f, "failed to remove entry [{}]", e),
+		}
+	}
+}
+
+impl Display for RemoveError {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		match self {
 			Self::FailedToInspectEntry(e) => write!(f, "failed to inspect entry [{}]", e),
 			Self::FailedToRemoveDirectory(e) => write!(f, "failed to remove directory [{}]", e),
 			Self::FailedToRemoveFile(e) => write!(f, "failed to remove file [{}]", e),
@@ -78,6 +97,7 @@ impl Display for CleanError {
 }
 
 impl Error for CleanError {}
+impl Error for RemoveError {}
 
 /// Cleans the entries described by the specified profile in the specified mode.
 fn clean<T>(profile: T, mode: Mode) -> CleanResult
@@ -113,7 +133,12 @@ where
 		.collect();
 
 	println!("Expanded {} paths in {:#?}.", paths.len(), start.elapsed());
-	println!("Deleting paths...");
+	println!("Deleting {} paths...", paths.len());
+
+	let start = Instant::now();
+
+	let mut total = 0usize;
+	let mut size = 0u64;
 
 	for (index, path) in paths.iter().enumerate() {
 		if matches!(mode, Mode::EveryPath) {
@@ -124,24 +149,36 @@ where
 			println!("Deleting path {} of {}: <{}>...", index + 1, paths.len(), path.display());
 		}
 
-		if let Err(e) = remove(path) {
-			println!("Failed to delete path: {}.", e);
+		match remove(path).map_err(CleanError::FailedToRemove) {
+			Ok(s) => {
+				total += 1;
+				size += s;
+			}
+			Err(e) => {
+				println!("Failed to delete path: {}.", e);
+			}
 		}
 	}
+
+	println!("Deleted {} paths in {:#?}, reclaiming {} of space.", total, start.elapsed(), size.format_size(DECIMAL));
 
 	Ok(())
 }
 
 /// Attempts to remove the specified path.
-fn remove<T>(path: T) -> CleanResult
+fn remove<T>(path: T) -> RemoveResult
 where
 	T: AsRef<Path>,
 {
-	match path.as_ref().metadata().map_err(CleanError::FailedToInspectEntry)? {
-		m if m.is_file() => fs::remove_file(path).map_err(CleanError::FailedToRemoveFile),
-		m if m.is_dir() => fs::remove_dir_all(path).map_err(CleanError::FailedToRemoveDirectory),
-		_ => Ok(()),
+	let metadata = path.as_ref().metadata().map_err(RemoveError::FailedToInspectEntry)?;
+
+	match &metadata {
+		m if m.is_file() => fs::remove_file(path).map_err(RemoveError::FailedToRemoveFile)?,
+		m if m.is_dir() => fs::remove_dir_all(path).map_err(RemoveError::FailedToRemoveDirectory)?,
+		_ => {}
 	}
+
+	Ok(metadata.len())
 }
 
 /// Continually prompts for a yes or no answer.
