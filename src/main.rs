@@ -69,6 +69,9 @@ enum RemoveError {
 
 	/// Indicates that a particular directory could not be removed.
 	FailedToRemoveDirectory(io::Error),
+
+	/// Indicates that a particular directory could not be read for its files.
+	FailedToReadDirectory(io::Error),
 }
 
 /// Indicates the result of a clean operation.
@@ -90,8 +93,9 @@ impl Display for RemoveError {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match self {
 			Self::FailedToInspectEntry(e) => write!(f, "failed to inspect entry [{}]", e),
-			Self::FailedToRemoveDirectory(e) => write!(f, "failed to remove directory [{}]", e),
 			Self::FailedToRemoveFile(e) => write!(f, "failed to remove file [{}]", e),
+			Self::FailedToRemoveDirectory(e) => write!(f, "failed to remove directory [{}]", e),
+			Self::FailedToReadDirectory(e) => write!(f, "failed to read directory files [{}]", e),
 		}
 	}
 }
@@ -173,12 +177,23 @@ where
 	let metadata = path.as_ref().metadata().map_err(RemoveError::FailedToInspectEntry)?;
 
 	match &metadata {
-		m if m.is_file() => fs::remove_file(path).map_err(RemoveError::FailedToRemoveFile)?,
-		m if m.is_dir() => fs::remove_dir_all(path).map_err(RemoveError::FailedToRemoveDirectory)?,
-		_ => {}
-	}
+		m if m.is_file() => {
+			fs::remove_file(path).map_err(RemoveError::FailedToRemoveFile)?;
 
-	Ok(metadata.len())
+			Ok(metadata.len())
+		}
+		m if m.is_dir() => {
+			#[rustfmt::skip]
+			let size = fs::read_dir(&path).map_err(RemoveError::FailedToReadDirectory)?
+				.flatten().map(|e| remove(e.path()))
+				.flatten().sum();
+
+			fs::remove_dir(path).map_err(RemoveError::FailedToRemoveDirectory)?;
+
+			Ok(size)
+		}
+		_ => Ok(0u64),
+	}
 }
 
 /// Continually prompts for a yes or no answer.
