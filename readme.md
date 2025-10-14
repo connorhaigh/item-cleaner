@@ -32,7 +32,7 @@ For a relatively example, to create a profile named 'Simple' that deletes a sing
 {
 	"name": "Simple",
 	"entries": [
-		{ "type": "file", "value": "C:\\hello.txt" }
+		{ "type": "path", "path": "C:\\hello.txt" }
 	]
 }
 ```
@@ -43,9 +43,9 @@ For a more complex example, to create a profile named 'Complex' that deletes a s
 {
 	"name": "Complex",
 	"entries": [
-		{ "type": "file", "value": "C:\\hello.txt" },
-		{ "type": "directory", "value": "C:\\logs" },
-		{ "type": "pattern", "value": "C:\\dumps\\*\\*.dmp", "exception": "mostRecent" }
+		{ "type": "path", "path": "C:\\hello.txt" },
+		{ "type": "path", "path": "C:\\logs" },
+		{ "type": "pattern", "pattern": "C:\\dumps\\*\\*.dmp", "exception": "mostRecent" }
 	]
 }
 ```

@@ -21,22 +21,16 @@ pub struct Profile {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum Entry {
-	/// Represents a single file path.
-	File {
-		/// The path of the file.
-		value: String,
+	/// Represents a path to a single file or directory.
+	Path {
+		/// The full (or relative) path.
+		path: String,
 	},
 
-	/// Represents a single directory path.
-	Directory {
-		/// The path of the directory.
-		value: String,
-	},
-
-	/// Represents a pattern to match either files or directories.
+	/// Represents a pattern to match one or more files or directories.
 	Pattern {
-		/// The pattern to match.
-		value: String,
+		/// The full (or relative) pattern to match.
+		pattern: String,
 
 		/// The exception to use to ensure one match remains, if any.
 		exception: Option<PatternException>,
@@ -91,21 +85,18 @@ impl Profile {
 
 impl Entry {
 	/// Expands the entry to the paths it represents.
-	/// In the case of a file entry or directory entry, this will be a single path.
-	/// In the case of a pattern, this will be as many paths that match the pattern.
+	/// In the case of a path, this will be a single path.
+	/// In the case of a pattern, this will be one or more paths that match the pattern.
 	pub fn expand(&self) -> EntryResult {
 		match self {
-			Self::File {
-				value,
-			} => Ok(vec![PathBuf::from(value)]),
-			Self::Directory {
-				value,
-			} => Ok(vec![PathBuf::from(value)]),
+			Self::Path {
+				path,
+			} => Ok(vec![PathBuf::from(path)]),
 			Self::Pattern {
-				value,
+				pattern,
 				exception,
 			} => {
-				let paths: Vec<PathBuf> = match glob::glob(value) {
+				let paths: Vec<PathBuf> = match glob::glob(pattern) {
 					Ok(p) => p.flatten().collect(),
 					Err(e) => return Err(EntryError::FailedToParse(e)),
 				};
@@ -137,26 +128,13 @@ impl Entry {
 impl Display for Entry {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match self {
-			Entry::File {
-				value,
-			} => write!(f, "File <{}>", value),
-			Entry::Directory {
-				value,
-			} => write!(f, "Directory <{}>", value),
+			Entry::Path {
+				path,
+			} => write!(f, "Path <{}>", path),
 			Entry::Pattern {
-				value: v,
-				exception: e,
-			} => {
-				write!(f, "Pattern ({})", v)?;
-
-				if let Some(e) = e {
-					write!(f, " [{}]", e)?;
-				}
-
-				write!(f, ")")?;
-
-				Ok(())
-			}
+				pattern,
+				exception: _,
+			} => write!(f, "Pattern <{}>", pattern),
 		}
 	}
 }
