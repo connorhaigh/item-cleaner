@@ -37,15 +37,15 @@ For a relatively example, to create a profile named 'Simple' that deletes a sing
 }
 ```
 
-For a more complex example, to create a profile named 'Complex' that deletes a single file, a single directory, and anything that matches a glob pattern, it would appear as follows:
+For a more complex example, to create a profile named 'Complex' that deletes a single file, a single directory, and anything that matches a glob pattern (except the most recent), it would appear as follows:
 
 ```json
 {
 	"name": "Complex",
 	"entries": [
 		{ "type": "file", "value": "C:\\hello.txt" },
-		{ "type": "dir", "value": "C:\\logs" },
-		{ "type": "pattern", "value": "C:\\dumps\\*\\*.dmp" }
+		{ "type": "directory", "value": "C:\\logs" },
+		{ "type": "pattern", "value": "C:\\dumps\\*\\*.dmp", "exception": "mostRecent" }
 	]
 }
 ```

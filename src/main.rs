@@ -119,7 +119,7 @@ where
 	#[rustfmt::skip]
 	let entries: Vec<&Entry> = if matches!(mode, Mode::EveryEntry) {
 		profile.entries.iter()
-			.filter(|&entry| prompt(format!("Include entry [{}]?", entry)))
+			.filter(|&e| prompt(format!("Include entry [{}]?", e)))
 			.collect()
 	} else {
 		profile.entries.iter().collect()
@@ -140,6 +140,8 @@ where
 	println!("Deleting {} paths...", paths.len());
 
 	let start = Instant::now();
+
+	// Iterate through each path and remove it.
 
 	let mut total = 0usize;
 	let mut size = 0u64;
