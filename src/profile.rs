@@ -23,13 +23,13 @@ pub struct Profile {
 pub enum Entry {
 	/// Represents a path to a single file or directory.
 	Path {
-		/// The full (or relative) path.
-		path: String,
+		/// The path.
+		path: PathBuf,
 	},
 
 	/// Represents a pattern to match one or more files or directories.
 	Pattern {
-		/// The full (or relative) pattern to match.
+		/// The pattern to match.
 		pattern: String,
 
 		/// The exception to use to ensure one match remains, if any.
@@ -87,23 +87,25 @@ impl Entry {
 	/// Expands the entry to the paths it represents.
 	/// In the case of a path, this will be a single path.
 	/// In the case of a pattern, this will be one or more paths that match the pattern.
-	pub fn expand(&self) -> EntryResult {
+	pub fn expand(self) -> EntryResult {
 		match self {
 			Self::Path {
 				path,
-			} => Ok(vec![PathBuf::from(path)]),
+			} => Ok(vec![path]),
 			Self::Pattern {
 				pattern,
 				exception,
 			} => {
-				let paths: Vec<PathBuf> = match glob::glob(pattern) {
+				// Expand the initial set of paths from the pattern.
+
+				let paths: Vec<PathBuf> = match glob::glob(&pattern) {
 					Ok(p) => p.flatten().collect(),
 					Err(e) => return Err(EntryError::FailedToParse(e)),
 				};
 
-				let filtered = if let Some(exception) = exception {
-					// Determine the path to exclude.
+				// Narrow the set of paths depending on the exception, if any.
 
+				let filtered = if let Some(exception) = exception {
 					let exclusion = match &exception {
 						PatternException::FirstAscending => paths.iter().min_by_key(|p| p.file_name().map(|n| n.to_str())),
 						PatternException::FirstDescending => paths.iter().max_by_key(|p| p.file_name().map(|n| n.to_str())),
@@ -125,30 +127,6 @@ impl Entry {
 	}
 }
 
-impl Display for Entry {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		match self {
-			Entry::Path {
-				path,
-			} => write!(f, "Path <{}>", path),
-			Entry::Pattern {
-				pattern,
-				exception: _,
-			} => write!(f, "Pattern <{}>", pattern),
-		}
-	}
-}
-
-impl Display for PatternException {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		match self {
-			Self::FirstAscending => write!(f, "first-ascending"),
-			Self::FirstDescending => write!(f, "first-descending"),
-			Self::MostRecent => write!(f, "most-recent"),
-		}
-	}
-}
-
 impl Error for ProfileError {}
 impl Error for EntryError {}
 
@@ -164,7 +142,7 @@ impl Display for ProfileError {
 impl Display for EntryError {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match self {
-			Self::FailedToParse(e) => write!(f, "failed to parse glob pattern {}]", e),
+			Self::FailedToParse(e) => write!(f, "failed to parse glob pattern [{}]", e),
 		}
 	}
 }

@@ -2,14 +2,14 @@ use std::{
 	error::Error,
 	fmt::{self, Display},
 	fs,
-	io::{self, BufRead, Write},
+	io::{self},
 	path::{Path, PathBuf},
 	time::Instant,
 };
 
-use clap::{Parser, ValueEnum};
+use clap::Parser;
 use humansize::{FormatSize, DECIMAL};
-use profile::{Entry, Profile, ProfileError};
+use profile::{Profile, ProfileError};
 
 mod profile;
 
@@ -20,29 +20,12 @@ struct Args {
 	/// Specifies the profile file
 	#[arg(short, long)]
 	profile: PathBuf,
-
-	/// Specifies the clean mode
-	#[arg(short, long, value_enum, default_value_t=Mode::EveryPath)]
-	mode: Mode,
-}
-
-/// Determines the mode of operation.
-#[derive(Debug, Clone, Copy, ValueEnum)]
-enum Mode {
-	/// Indicates that no prompts should be generated.
-	Silent,
-
-	/// Indicates that every entry should be prompted for confirmation before removing.
-	EveryEntry,
-
-	/// Indicates that every expanded path should be prompted for confirmation before removing.
-	EveryPath,
 }
 
 fn main() {
 	let args = Args::parse();
 
-	match clean(args.profile, args.mode) {
+	match clean(args.profile) {
 		Ok(()) => println!("Successfully cleaned items."),
 		Err(e) => println!("Failed to clean items: {}.", e),
 	}
@@ -62,7 +45,7 @@ enum CleanError {
 #[derive(Debug)]
 enum RemoveError {
 	/// Indicates that the metadata for a particular file could not be read.
-	FailedToInspectEntry(io::Error),
+	FailedToInspectPath(io::Error),
 
 	/// Indicates that a particular file could not be removed.
 	FailedToRemoveFile(io::Error),
@@ -84,7 +67,7 @@ impl Display for CleanError {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match self {
 			Self::FailedToLoad(e) => write!(f, "failed to load profile [{}]", e),
-			Self::FailedToRemove(e) => write!(f, "failed to remove entry [{}]", e),
+			Self::FailedToRemove(e) => write!(f, "failed to remove path [{}]", e),
 		}
 	}
 }
@@ -92,7 +75,7 @@ impl Display for CleanError {
 impl Display for RemoveError {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match self {
-			Self::FailedToInspectEntry(e) => write!(f, "failed to inspect entry [{}]", e),
+			Self::FailedToInspectPath(e) => write!(f, "failed to inspect path [{}]", e),
 			Self::FailedToRemoveFile(e) => write!(f, "failed to remove file [{}]", e),
 			Self::FailedToRemoveDirectory(e) => write!(f, "failed to remove directory [{}]", e),
 			Self::FailedToReadDirectory(e) => write!(f, "failed to read directory files [{}]", e),
@@ -104,7 +87,7 @@ impl Error for CleanError {}
 impl Error for RemoveError {}
 
 /// Cleans the entries described by the specified profile in the specified mode.
-fn clean<T>(profile: T, mode: Mode) -> CleanResult
+fn clean<T>(profile: T) -> CleanResult
 where
 	T: AsRef<Path>,
 {
@@ -112,27 +95,15 @@ where
 
 	let profile = Profile::load(profile).map_err(CleanError::FailedToLoad)?;
 
-	println!("Discovering paths using profile '{}'...", profile.name);
-
-	// Collect all applicable entries.
-
-	#[rustfmt::skip]
-	let entries: Vec<&Entry> = if matches!(mode, Mode::EveryEntry) {
-		profile.entries.iter()
-			.filter(|&e| prompt(format!("Include entry [{}]?", e)))
-			.collect()
-	} else {
-		profile.entries.iter().collect()
-	};
+	println!("Expanding paths using profile '{}'...", profile.name);
 
 	let start = Instant::now();
 
 	// Expand each entry to all of its paths.
 
 	#[rustfmt::skip]
-	let paths: Vec<PathBuf> = entries.iter()
-		.flat_map(|&e| e.expand())
-		.flatten()
+	let paths: Vec<PathBuf> = profile.entries.into_iter()
+		.flat_map(|e| e.expand()).flatten()
 		.flat_map(|p| p.canonicalize())
 		.collect();
 
@@ -147,13 +118,7 @@ where
 	let mut size = 0u64;
 
 	for (index, path) in paths.iter().enumerate() {
-		if matches!(mode, Mode::EveryPath) {
-			if !prompt(format!("Delete path <{}>?", path.display())) {
-				continue;
-			}
-		} else {
-			println!("Deleting path {} of {}: <{}>...", index + 1, paths.len(), path.display());
-		}
+		println!("Deleting path {} of {}: <{}>...", index + 1, paths.len(), path.display());
 
 		match remove(path).map_err(CleanError::FailedToRemove) {
 			Ok(s) => {
@@ -176,14 +141,9 @@ fn remove<T>(path: T) -> RemoveResult
 where
 	T: AsRef<Path>,
 {
-	let metadata = path.as_ref().metadata().map_err(RemoveError::FailedToInspectEntry)?;
+	let metadata = path.as_ref().metadata().map_err(RemoveError::FailedToInspectPath)?;
 
 	match &metadata {
-		m if m.is_file() => {
-			fs::remove_file(path).map_err(RemoveError::FailedToRemoveFile)?;
-
-			Ok(metadata.len())
-		}
 		m if m.is_dir() => {
 			#[rustfmt::skip]
 			let size = fs::read_dir(&path).map_err(RemoveError::FailedToReadDirectory)?
@@ -194,28 +154,11 @@ where
 
 			Ok(size)
 		}
+		m if m.is_file() => {
+			fs::remove_file(path).map_err(RemoveError::FailedToRemoveFile)?;
+
+			Ok(metadata.len())
+		}
 		_ => Ok(0u64),
-	}
-}
-
-/// Continually prompts for a yes or no answer.
-fn prompt<T>(str: T) -> bool
-where
-	T: AsRef<str>,
-{
-	loop {
-		print!("{} (Y/n): ", str.as_ref());
-
-		let _ = io::stdout().flush();
-		let Some(Ok(line)) = io::stdin().lock().lines().next() else {
-			return false;
-		};
-
-		return match line.as_str() {
-			"Y" | "y" => true,
-			"N" | "n" => false,
-			_ if line.is_empty() => true,
-			_ => continue,
-		};
 	}
 }
