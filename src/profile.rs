@@ -32,23 +32,34 @@ pub enum Entry {
 		/// The pattern to match.
 		pattern: String,
 
-		/// The exception to use to ensure one match remains, if any.
-		exception: Option<PatternException>,
+		/// The retention to use, if any.
+		retention: Option<Retention>,
 	},
 }
 
-/// Represents a pattern exception.
+/// Represents a retention.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub enum PatternException {
-	/// Indicates the first ascending match.
-	FirstAscending,
+pub struct Retention {
+	/// The (ascending) order to use for sorting matches.
+	pub order: Order,
 
-	/// Indicates the first descending match.
-	FirstDescending,
+	/// The number of matches to retain.
+	pub count: usize,
+}
 
-	/// Indicates the most recent (by modified/created timestamp) match.
-	MostRecent,
+/// Represents an order.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Order {
+	/// Indicates to be sorted by file name.
+	FileName,
+
+	/// Indicates to be sorted by the first created timestamp.
+	Created,
+
+	/// Indicates to be sorted by the last modified timestamp.
+	Modified,
 }
 
 /// Represents a profile-related error.
@@ -94,34 +105,28 @@ impl Entry {
 			} => Ok(vec![path]),
 			Self::Pattern {
 				pattern,
-				exception,
+				retention,
 			} => {
 				// Expand the initial set of paths from the pattern.
 
-				let paths: Vec<PathBuf> = match glob::glob(&pattern) {
+				let mut paths: Vec<PathBuf> = match glob::glob(&pattern) {
 					Ok(p) => p.flatten().collect(),
 					Err(e) => return Err(EntryError::FailedToParse(e)),
 				};
 
-				// Narrow the set of paths depending on the exception, if any.
+				// Sort and omit the paths that should be retained, if any.
 
-				let filtered = if let Some(exception) = exception {
-					let exclusion = match &exception {
-						PatternException::FirstAscending => paths.iter().min_by_key(|p| p.file_name().map(|n| n.to_str())),
-						PatternException::FirstDescending => paths.iter().max_by_key(|p| p.file_name().map(|n| n.to_str())),
-						PatternException::MostRecent => paths.iter().max_by_key(|p| p.metadata().and_then(|m| m.modified().or(m.created())).ok()),
-					};
+				if let Some(retention) = retention {
+					paths.sort_by(|a, b| match &retention.order {
+						Order::FileName => a.file_name().cmp(&b.file_name()),
+						Order::Created => b.metadata().and_then(|m| m.created()).ok().cmp(&a.metadata().and_then(|m| m.created()).ok()),
+						Order::Modified => b.metadata().and_then(|m| m.modified()).ok().cmp(&a.metadata().and_then(|m| m.modified()).ok()),
+					});
 
-					if let Some(e) = exclusion.cloned() {
-						paths.into_iter().filter(|p| p != &e).collect()
-					} else {
-						Vec::default() // Don't expand if no exception
-					}
-				} else {
-					paths
-				};
+					paths.drain(0..retention.count);
+				}
 
-				Ok(filtered)
+				Ok(paths)
 			}
 		}
 	}
