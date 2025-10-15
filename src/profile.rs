@@ -123,7 +123,7 @@ impl Entry {
 						Order::Modified => b.metadata().and_then(|m| m.modified()).ok().cmp(&a.metadata().and_then(|m| m.modified()).ok()),
 					});
 
-					paths.drain(0..retention.count);
+					paths.drain(0..retention.count.min(paths.len()));
 				}
 
 				Ok(paths)
