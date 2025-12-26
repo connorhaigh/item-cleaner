@@ -54,7 +54,7 @@ enum RemoveError {
 	FailedToRemoveDirectory(io::Error),
 
 	/// Indicates that a particular directory could not be read for its files.
-	FailedToReadDirectory(io::Error),
+	FailedToListDirectory(io::Error),
 }
 
 /// Indicates the result of a clean operation.
@@ -78,7 +78,7 @@ impl Display for RemoveError {
 			Self::FailedToInspectPath(e) => write!(f, "failed to inspect path [{}]", e),
 			Self::FailedToRemoveFile(e) => write!(f, "failed to remove file [{}]", e),
 			Self::FailedToRemoveDirectory(e) => write!(f, "failed to remove directory [{}]", e),
-			Self::FailedToReadDirectory(e) => write!(f, "failed to read directory files [{}]", e),
+			Self::FailedToListDirectory(e) => write!(f, "failed to list directory files [{}]", e),
 		}
 	}
 }
@@ -86,7 +86,7 @@ impl Display for RemoveError {
 impl Error for CleanError {}
 impl Error for RemoveError {}
 
-/// Cleans the entries described by the specified profile in the specified mode.
+/// Cleans the entries described by the specified profile.
 fn clean<T>(profile: T) -> CleanResult
 where
 	T: AsRef<Path>,
@@ -146,7 +146,7 @@ where
 	match &metadata {
 		m if m.is_dir() => {
 			#[rustfmt::skip]
-			let size = fs::read_dir(&path).map_err(RemoveError::FailedToReadDirectory)?
+			let size = fs::read_dir(&path).map_err(RemoveError::FailedToListDirectory)?
 				.flatten().map(|e| remove(e.path()))
 				.flatten().sum();
 
